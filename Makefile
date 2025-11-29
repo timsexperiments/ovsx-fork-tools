@@ -14,4 +14,3 @@ e2e-docker:
 
 clean:
 	rm -f ovsx-setup
-	rm -rf tests/e2e/fixtures/extension/pnpm-lock.yaml

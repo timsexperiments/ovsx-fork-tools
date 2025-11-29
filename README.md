@@ -13,7 +13,21 @@ If you have the [GitHub CLI (`gh`)](https://cli.github.com/) installed, you can 
 go run github.com/timsexperiments/ovsx-fork-tools@latest
 ```
 
-Or if you have the binary installed:
+### Installation
+
+You can also install the tool globally:
+
+**Using Go:**
+
+```bash
+go install github.com/timsexperiments/ovsx-fork-tools@latest
+```
+
+**Using Pre-built Binaries:**
+
+Download the latest binary for your platform from the [Releases](https://github.com/timsexperiments/ovsx-fork-tools/releases) page.
+
+Then run it:
 
 ```bash
 ovsx-setup

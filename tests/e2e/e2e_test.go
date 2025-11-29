@@ -1,3 +1,14 @@
+// Package e2e_test provides end-to-end tests for the ovsx-setup tool.
+// These tests simulate real-world workflows using local repositories and mocks.
+//
+// To run these tests, set E2E=true environment variable:
+//
+//	E2E=true go test -v ./tests/e2e/...
+//
+// Requirements:
+//   - act (GitHub Actions runner)
+//   - Docker (for act execution)
+//   - git
 package e2e_test
 
 import (
