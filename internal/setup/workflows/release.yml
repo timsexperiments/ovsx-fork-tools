@@ -1,14 +1,15 @@
+# This workflow builds and publishes the extension to OpenVSX.
+# It runs when a new tag (v*) is pushed.
 name: Release to OpenVSX
 
 on:
   push:
-    branches:
-      - main
-      - master
+    tags:
+      - "v*"
+      - "**/v*"
 
 jobs:
   publish:
-    if: contains(github.event.head_commit.message, 'sync with upstream') || contains(github.event.head_commit.message, 'release')
     runs-on: ubuntu-latest
     env:
       EXTENSION_PATH: ${{ vars.EXTENSION_PATH }}
@@ -20,12 +21,12 @@ jobs:
 
       - uses: pnpm/action-setup@v3
         with:
-          version: ^9.6.0
+          version: 10
 
       - name: Setup Node
         uses: actions/setup-node@v3
         with:
-          node-version: 18
+          node-version: lts/*
           cache: "pnpm"
 
       - name: Install Dependencies
@@ -34,7 +35,9 @@ jobs:
       - name: Build Everything
         run: pnpm -r run build
 
-      - name: Patch to TimsExperiments
+      # Updates the 'publisher' field in package.json to match the environment variable.
+      # The upstream package.json has the original publisher. We need to publish under YOUR publisher ID.
+      - name: Patch to ${{ env.PUBLISHER_NAME }}
         run: |
           cd ${{ env.EXTENSION_PATH }}
 
@@ -43,6 +46,8 @@ jobs:
           echo "Publisher verified as:"
           grep '"publisher":' package.json
 
+      # Runs 'vsce package' to create the file and 'ovsx publish' to upload it.
+      # This creates the .vsix artifact and uploads it to the OpenVSX registry.
       - name: Build & Publish
         env:
           OVSX_PAT: ${{ env.OPEN_VSX_TOKEN }}
