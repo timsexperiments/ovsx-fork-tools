@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.24"
+
+      - name: Install GitHub CLI
+        run: |
+          curl -L https://github.com/cli/cli/releases/download/v2.83.1/gh_2.83.1_linux_amd64.tar.gz -o gh.tar.gz
+          tar -xzf gh.tar.gz
+          sudo mv gh_2.83.1_linux_amd64/bin/gh /usr/local/bin/
+          rm -rf gh.tar.gz gh_2.83.1_linux_amd64
+
+      - name: Build
+        run: go build -v ./...
+
+      - name: Validate Workflow Files
+        run: |
+          curl -L -o action-validator https://github.com/mpalmer/action-validator/releases/download/v0.8.0/action-validator_linux_amd64
+          chmod +x action-validator
+          for f in .github/workflows/*.yml internal/setup/workflows/*.yml; do
+            echo "Validating $f"
+            ./action-validator "$f"
+          done
+
+      - name: Test
+        run: |
+          sudo useradd -m testuser
+          cp -r . /tmp/workspace
+          sudo chown -R testuser:testuser /tmp/workspace
+
+          sudo -u testuser bash -c "
+            cd /tmp/workspace
+            export PATH=$PATH
+            export GOCACHE=/tmp/workspace/.gocache
+            export GOMODCACHE=/tmp/workspace/.gomodcache
+            go test -v -cover ./...
+          "

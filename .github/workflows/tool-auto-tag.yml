@@ -1,0 +1,36 @@
+name: Auto Tag Tool
+
+on:
+  # pull_request:
+  #   types:
+  #     - closed
+  #   branches:
+  #     - main
+  #   paths-ignore:
+  #     - "README.md"
+  #     - ".gitignore"
+  workflow_dispatch:
+
+concurrency:
+  group: tool-auto-tag
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: "0"
+
+      - name: Bump version and push tag
+        uses: anothrNick/github-tag-action@1.74.0
+        env:
+          WITH_V: true
+          DEFAULT_BUMP: patch
+          INITIAL_VERSION: 0.0.0
+          PRERELEASE: false

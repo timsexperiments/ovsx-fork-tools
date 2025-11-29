@@ -7,10 +7,16 @@ This repository contains standard workflows to automate syncing a VS Code extens
 If you have the [GitHub CLI (`gh`)](https://cli.github.com/) installed, you can setup your fork in seconds.
 
 1. Navigate to your forked repository directory in your terminal.
-2. Run the following command (replace `YOUR_USERNAME` with the owner of this kit):
+2. Run the tool using `go run`:
 
 ```bash
-/bin/bash -c "$(curl -fsSL [https://raw.githubusercontent.com/YOUR_USERNAME/openvsx-publish-kit/main/setup.sh](https://raw.githubusercontent.com/YOUR_USERNAME/openvsx-publish-kit/main/setup.sh))"
+go run github.com/timsexperiments/ovsx-fork-tools@latest
+```
+
+Or if you have the binary installed:
+
+```bash
+ovsx-setup
 ```
 
 ## 🛠 Manual Configuration Guide
