@@ -9,6 +9,8 @@ on:
     paths-ignore:
       - "README.md"
       - ".gitignore"
+      - "tests/**"
+      - "scripts/*"
 
 concurrency:
   group: tool-auto-tag
@@ -27,7 +29,7 @@ jobs:
           fetch-depth: "0"
 
       - name: Bump version and push tag
-        uses: anothrNick/github-tag-action@1.74.0
+        uses: anothrNick/github-tag-action@1.75.0
         env:
           GITHUB_TOKEN: ${{ secrets.TOKEN }}
           WITH_V: true
