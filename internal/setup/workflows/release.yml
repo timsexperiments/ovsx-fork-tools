@@ -20,9 +20,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Detect pnpm version
+        id: detect-pnpm
+        run: |
+          if [ -f package.json ] && grep -q '"packageManager":' package.json; then
+            echo "Found packageManager in root package.json"
+            echo "version=" >> $GITHUB_OUTPUT
+          elif [ -f "${{ env.EXTENSION_PATH }}/package.json" ] && grep -q '"packageManager":' "${{ env.EXTENSION_PATH }}/package.json"; then
+            echo "Found packageManager in ${{ env.EXTENSION_PATH }}/package.json"
+            echo "version=" >> $GITHUB_OUTPUT
+          else
+            echo "No packageManager found, using default version 10"
+            echo "version=10" >> $GITHUB_OUTPUT
+          fi
+
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: ${{ steps.detect-pnpm.outputs.version }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
