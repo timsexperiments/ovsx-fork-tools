@@ -1,15 +1,14 @@
 name: Auto Tag Tool
 
 on:
-  # pull_request:
-  #   types:
-  #     - closed
-  #   branches:
-  #     - main
-  #   paths-ignore:
-  #     - "README.md"
-  #     - ".gitignore"
-  workflow_dispatch:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - main
+    paths-ignore:
+      - "README.md"
+      - ".gitignore"
 
 concurrency:
   group: tool-auto-tag
