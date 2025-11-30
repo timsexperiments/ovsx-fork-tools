@@ -1,0 +1,9 @@
+{
+  "action": "opened",
+  "pull_request": {
+    "merged": true,
+    "base": {
+      "ref": "main"
+    }
+  }
+}

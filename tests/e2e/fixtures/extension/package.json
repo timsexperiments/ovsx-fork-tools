@@ -1,0 +1,16 @@
+{
+  "name": "test-extension",
+  "displayName": "Test Extension",
+  "description": "A minimal extension for E2E testing",
+  "version": "0.0.1",
+  "publisher": "original-publisher",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "scripts": {
+    "build": "echo 'building...'"
+  },
+  "categories": [
+    "Other"
+  ]
+}

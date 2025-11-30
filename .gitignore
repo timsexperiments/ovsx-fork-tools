@@ -22,3 +22,4 @@ go.work
 
 # Tool binary
 ovsx-setup
+tests/e2e/temp
