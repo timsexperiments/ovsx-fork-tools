@@ -1,24 +1,84 @@
-# This workflow builds and publishes the extension to OpenVSX.
-# It runs when a new tag (v*) is pushed.
-name: Release to OpenVSX
-
+# This workflow automatically creates a git tag when a version change is detected in package.json.
+# It runs on pushes to the main/master branch.
+name: Auto Tag Release
 on:
-  workflow_dispatch:
   push:
-    tags:
-      - "v*"
-      - "**/v*"
+    branches:
+      - main
+      - master
+
+concurrency:
+  group: auto-tag-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  publish:
+  tag-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      created: ${{ steps.tag.outputs.created }}
+    env:
+      EXTENSION_PATH: ${{ vars.EXTENSION_PATH }}
+      PUBLISHER_NAME: ${{ vars.PUBLISHER_NAME }}
+      OPEN_VSX_TOKEN: ${{ secrets.OPEN_VSX_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Reads package.json, calculates the expected tag format (vX.Y.Z), and outputs it.
+      # We need to know the current version in package.json to determine if a tag is missing.
+      - name: Get Version and Tag
+        id: version
+        run: |
+          cd ${{ env.EXTENSION_PATH }} || exit 1
+          VERSION=$(jq -r .version package.json)
+
+          if [ "${{ env.EXTENSION_PATH }}" == "." ] || [ "${{ env.EXTENSION_PATH }}" == "./" ]; then
+            TAG="v$VERSION"
+          else
+            # Clean path for tag name (remove leading ./ and trailing /)
+            CLEAN_PATH=$(echo "${{ env.EXTENSION_PATH }}" | sed 's/^\.\///' | sed 's/\/$//')
+            TAG="$CLEAN_PATH/v$VERSION"
+          fi
+
+          echo "Detected version: $VERSION"
+          echo "Calculated tag: $TAG"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      # Checks if the calculated tag exists. If not, creates and pushes it.
+      # This ensures we only create tags that don't exist yet, avoiding errors and duplicate releases.
+      - name: Check and Push Tag
+        id: tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists. Skipping."
+            echo "created=false" >> $GITHUB_OUTPUT
+          else
+            echo "Tag $TAG does not exist. Creating..."
+            git config user.name "GitHub Action"
+            git config user.email "action@github.com"
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "$TAG"
+            echo "created=true" >> $GITHUB_OUTPUT
+          fi
+
+  release:
+    needs: tag-version
+    if: needs.tag-version.outputs.created == 'true'
     runs-on: ubuntu-latest
     env:
       EXTENSION_PATH: ${{ vars.EXTENSION_PATH }}
       PUBLISHER_NAME: ${{ vars.PUBLISHER_NAME }}
       OPEN_VSX_TOKEN: ${{ secrets.OPEN_VSX_TOKEN }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag-version.outputs.tag }}
 
       - name: Detect pnpm version
         id: detect-pnpm

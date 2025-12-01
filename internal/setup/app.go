@@ -58,10 +58,9 @@ func Run() error {
 	}
 
 	filesToInstall := map[string][]byte{
-		"sync.yml":          workflows.Sync,
-		"release.yml":       workflows.Release,
-		"auto-tag.yml":      workflows.AutoTag,
-		"check-version.yml": workflows.CheckVersion,
+		"ovsx-fork-tools-sync.yml":          workflows.Sync,
+		"ovsx-fork-tools-release.yml":       workflows.Release,
+		"ovsx-fork-tools-check-version.yml": workflows.CheckVersion,
 	}
 
 	for filename, content := range filesToInstall {
