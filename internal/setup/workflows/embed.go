@@ -6,9 +6,6 @@ import (
 	_ "embed"
 )
 
-//go:embed auto-tag.yml
-var AutoTag []byte
-
 //go:embed check-version.yml
 var CheckVersion []byte
 

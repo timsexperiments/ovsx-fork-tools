@@ -72,7 +72,7 @@ func (ot *OvsxTest) AssertWorkflowFilesExist() *OvsxTest {
 func (ot *OvsxTest) AssertFilesExist() *OvsxTest {
 	return ot.Assert(func(t *testing.T, err error) {
 		workflowDir := filepath.Join(".github", "workflows")
-		expectedFiles := []string{"sync.yml", "release.yml", "auto-tag.yml", "check-version.yml"}
+		expectedFiles := []string{"ovsx-fork-tools-sync.yml", "ovsx-fork-tools-release.yml", "ovsx-fork-tools-check-version.yml"}
 		for _, f := range expectedFiles {
 			path := filepath.Join(workflowDir, f)
 			if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -97,7 +97,7 @@ func (ot *OvsxTest) AssertFilesNotExist(files ...string) *OvsxTest {
 func (ot *OvsxTest) AssertFilesStaged() *OvsxTest {
 	return ot.Assert(func(t *testing.T, err error) {
 		out, _ := exec.Command("git", "status", "--porcelain").Output()
-		if !strings.Contains(string(out), "A  .github/workflows/sync.yml") {
+		if !strings.Contains(string(out), "A  .github/workflows/ovsx-fork-tools-sync.yml") {
 			t.Error("Files were not staged")
 		}
 	})
@@ -106,7 +106,7 @@ func (ot *OvsxTest) AssertFilesStaged() *OvsxTest {
 func (ot *OvsxTest) AssertFilesNotStaged() *OvsxTest {
 	return ot.Assert(func(t *testing.T, err error) {
 		out, _ := exec.Command("git", "status", "--porcelain").Output()
-		if strings.Contains(string(out), "A  .github/workflows/sync.yml") {
+		if strings.Contains(string(out), "A  .github/workflows/ovsx-fork-tools-sync.yml") {
 			t.Error("Files should not be staged")
 		}
 	})

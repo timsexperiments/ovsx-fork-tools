@@ -38,10 +38,10 @@ func TestE2E_Sync(t *testing.T) {
 	runGit(t, forkDir, "remote", "set-url", "origin", ".e2e/upstream")
 
 	// Inject safe.directory
-	syncYamlPath := filepath.Join(forkDir, ".github/workflows/sync.yml")
+	syncYamlPath := filepath.Join(forkDir, ".github/workflows/ovsx-fork-tools-sync.yml")
 	injectGitSafeDirectory(t, syncYamlPath)
 
-	runAct(t, forkDir, "sync-pr", "push", "", "sync.yml", mocksDir, upstreamDir)
+	runAct(t, forkDir, "sync-pr", "push", "", "ovsx-fork-tools-sync.yml", mocksDir, upstreamDir)
 }
 
 func TestE2E_CI(t *testing.T) {
@@ -59,7 +59,7 @@ func TestE2E_CI(t *testing.T) {
 	fixturesDir, _ := filepath.Abs("fixtures")
 	prEvent := filepath.Join(fixturesDir, "pr_merged.json") // Using existing PR event
 
-	runAct(t, forkDir, "check-version", "pull_request", prEvent, "check-version.yml", mocksDir, upstreamDir)
+	runAct(t, forkDir, "check-version", "pull_request", prEvent, "ovsx-fork-tools-check-version.yml", mocksDir, upstreamDir)
 }
 
 func TestE2E_Release(t *testing.T) {
@@ -72,7 +72,7 @@ func TestE2E_Release(t *testing.T) {
 	defer os.RemoveAll(mocksDir)
 	defer os.RemoveAll(upstreamDir)
 
-	t.Log("Running auto-tag workflow...")
+	t.Log("Running release workflow (tag-version job)...")
 
 	fixturesDir, _ := filepath.Abs("fixtures")
 	prEvent := filepath.Join(fixturesDir, "pr_merged.json")
@@ -81,15 +81,14 @@ func TestE2E_Release(t *testing.T) {
 	runGit(t, forkDir, "remote", "set-url", "origin", ".e2e/upstream")
 
 	// Inject safe.directory
-	autoTagPath := filepath.Join(forkDir, ".github/workflows/auto-tag.yml")
-	injectGitSafeDirectory(t, autoTagPath)
+	releaseYamlPath := filepath.Join(forkDir, ".github/workflows/ovsx-fork-tools-release.yml")
+	injectGitSafeDirectory(t, releaseYamlPath)
 
-	runAct(t, forkDir, "tag-version", "push", prEvent, "auto-tag.yml", mocksDir, upstreamDir)
+	runAct(t, forkDir, "tag-version", "push", prEvent, "ovsx-fork-tools-release.yml", mocksDir, upstreamDir)
 
-	t.Log("Running release workflow...")
+	t.Log("Running release workflow (release job)...")
 
 	// Modify release.yml to use local ovsx mock instead of pnpm dlx
-	releaseYamlPath := filepath.Join(forkDir, ".github/workflows/release.yml")
 	content, err := os.ReadFile(releaseYamlPath)
 	if err != nil {
 		t.Fatalf("Failed to read release.yml: %v", err)
@@ -99,9 +98,10 @@ func TestE2E_Release(t *testing.T) {
 		t.Fatalf("Failed to write release.yml: %v", err)
 	}
 
+	// Re-inject safe directory because we overwrote the file
 	injectGitSafeDirectory(t, releaseYamlPath)
 
-	runAct(t, forkDir, "publish", "push", "", "release.yml", mocksDir, upstreamDir)
+	runAct(t, forkDir, "release", "push", "", "ovsx-fork-tools-release.yml", mocksDir, upstreamDir)
 }
 
 func setupE2EEnv(t *testing.T) (string, string, string) {
@@ -164,8 +164,8 @@ func setupE2EEnv(t *testing.T) (string, string, string) {
 		t.Fatalf("ovsx-setup failed: %v\nOutput:\n%s", err, out)
 	}
 
-	assertFileExists(t, filepath.Join(forkDir, ".github/workflows/sync.yml"))
-	assertFileExists(t, filepath.Join(forkDir, ".github/workflows/release.yml"))
+	assertFileExists(t, filepath.Join(forkDir, ".github/workflows/ovsx-fork-tools-sync.yml"))
+	assertFileExists(t, filepath.Join(forkDir, ".github/workflows/ovsx-fork-tools-release.yml"))
 
 	// Commit setup changes
 	runGit(t, forkDir, "add", ".")
