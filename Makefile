@@ -6,11 +6,8 @@ build:
 test:
 	go test -v ./...
 
-e2e-local: build
-	E2E=true go test -v ./tests/e2e/...
-
-e2e-docker:
-	./scripts/run-e2e-docker.sh
+e2e: build
+	go test -v -tags e2e ./tests/e2e/...
 
 clean:
 	rm -f ovsx-setup

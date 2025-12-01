@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - master
+  workflow_dispatch:
 
 concurrency:
   group: auto-tag-${{ github.ref }}
@@ -128,4 +129,4 @@ jobs:
 
           pnpm dlx vsce package
 
-          pnpm dlx ovsx publish -p $OVSX_PAT || echo "Publish failed or version already exists."
+          pnpm dlx ovsx publish -p $OVSX_PAT

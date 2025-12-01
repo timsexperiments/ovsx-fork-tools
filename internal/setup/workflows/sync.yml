@@ -13,6 +13,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,13 +32,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Use GitHub CLI to get the parent repository URL
-          PARENT_URL=$(gh repo view ${{ github.repository }} --json parent --jq '.parent.url')
-
-          if [ -z "$PARENT_URL" ] || [ "$PARENT_URL" == "null" ]; then
+          # Use GitHub CLI to get the parent repository
+          PARENT_REPO=$(gh repo view ${{ github.repository }} --json parent --jq 'if .parent then (.parent.owner.login + "/" + .parent.name) else null end')
+          if [ -z "$PARENT_REPO" ] || [ "$PARENT_REPO" == "null" ]; then
             echo "Error: This repository is not a fork. Cannot sync."
             exit 1
           fi
+
+          # Get the URL of the parent repository
+          PARENT_URL=$(gh repo view $PARENT_REPO --json url --jq '.url')
 
           echo "Detected upstream: $PARENT_URL"
 
@@ -73,12 +76,23 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BASE_BRANCH: ${{ steps.upstream.outputs.branch }}
         run: |
-          gh pr create \
-            --base $BASE_BRANCH \
-            --head upstream-sync \
-            --title "chore: sync with upstream" \
-            --body "Automated sync from ${{ steps.upstream.outputs.url }}." \
-            --label "upstream-sync" || echo "PR already exists"
+          # Check if PR already exists
+          EXISTING_PR=$(gh pr list --head upstream-sync --repo ${{ github.repository }} --json number --jq '.[0].number')
 
-          # Enable auto-merge
-          gh pr merge upstream-sync --auto --merge
+          if [ -z "$EXISTING_PR" ]; then
+            # Create PR only if it doesn't exist
+            gh pr create \
+              --base $BASE_BRANCH \
+              --head upstream-sync \
+              --repo ${{ github.repository }} \
+              --title "chore: sync with upstream" \
+              --body "Automated sync from ${{ steps.upstream.outputs.url }}."
+            
+            # Get the newly created PR number
+            PR_NUMBER=$(gh pr list --head upstream-sync --repo ${{ github.repository }} --json number --jq '.[0].number')
+          else
+            echo "PR already exists: #$EXISTING_PR"
+            PR_NUMBER=$EXISTING_PR
+          fi
+
+          echo "✓ PR #$PR_NUMBER is ready for review"
