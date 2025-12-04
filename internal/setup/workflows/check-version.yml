@@ -3,7 +3,9 @@
 name: Check Version
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    branches:
+      - main
+      - master
 
 jobs:
   check-version:

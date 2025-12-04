@@ -9,8 +9,7 @@ on:
     paths-ignore:
       - "README.md"
       - ".gitignore"
-      - "tests/**"
-      - "scripts/*"
+      - "tests/**/*"
 
 concurrency:
   group: tool-auto-tag

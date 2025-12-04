@@ -54,6 +54,9 @@ jobs:
 
   e2e-tests:
     runs-on: ubuntu-latest
+    concurrency:
+      group: e2e-testing
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
 
@@ -62,12 +65,7 @@ jobs:
         with:
           go-version: "1.24"
 
-      - name: Install act
-        run: |
-          curl -L -o act.tar.gz https://github.com/nektos/act/releases/download/v0.2.82/act_Linux_x86_64.tar.gz
-          echo "76645c0bbe4bb69a8f0ba3caefa681b2f4c04babd4679c67861af9a276a3561f  act.tar.gz" | sha256sum -c -
-          tar -xzf act.tar.gz -C /usr/local/bin act
-          rm act.tar.gz
-
       - name: Run E2E Tests
-        run: make e2e-docker
+        env:
+          GITHUB_TOKEN: ${{ secrets.TOKEN || secrets.GITHUB_TOKEN }}
+        run: make e2e

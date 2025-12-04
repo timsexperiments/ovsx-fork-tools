@@ -1,270 +1,320 @@
-// Package e2e_test provides end-to-end tests for the ovsx-setup tool.
-// These tests simulate real-world workflows using local repositories and mocks.
-//
-// To run these tests, set E2E=true environment variable:
-//
-//	E2E=true go test -v ./tests/e2e/...
-//
-// Requirements:
-//   - act (GitHub Actions runner)
-//   - Docker (for act execution)
-//   - git
+//go:build e2e
+
 package e2e_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
-func TestE2E_Sync(t *testing.T) {
-	if os.Getenv("E2E") != "true" {
-		t.Skip("Skipping E2E test. Set E2E=true to run.")
-	}
+const (
+	upstreamRepo = "ovsx-fork-tools/test-extension"
+	forkRepo     = "timsexperiments/ovsx-fork-tools-test-extension"
+)
 
-	forkDir, mocksDir, upstreamDir := setupE2EEnv(t)
-	defer os.RemoveAll(forkDir)
-	defer os.RemoveAll(mocksDir)
-	defer os.RemoveAll(upstreamDir)
+func TestRealE2E(t *testing.T) {
 
-	t.Log("Simulating upstream change...")
-	runGit(t, upstreamDir, "commit", "--allow-empty", "-m", "Upstream update")
+	startTime := time.Now()
 
-	t.Log("Running sync workflow...")
-	// Configure origin to point to the local upstream for git push
-	runGit(t, forkDir, "remote", "set-url", "origin", ".e2e/upstream")
-
-	// Inject safe.directory
-	syncYamlPath := filepath.Join(forkDir, ".github/workflows/ovsx-fork-tools-sync.yml")
-	injectGitSafeDirectory(t, syncYamlPath)
-
-	runAct(t, forkDir, "sync-pr", "push", "", "ovsx-fork-tools-sync.yml", mocksDir, upstreamDir)
-}
-
-func TestE2E_CI(t *testing.T) {
-	if os.Getenv("E2E") != "true" {
-		t.Skip("Skipping E2E test. Set E2E=true to run.")
-	}
-
-	forkDir, mocksDir, upstreamDir := setupE2EEnv(t)
-	defer os.RemoveAll(forkDir)
-	defer os.RemoveAll(mocksDir)
-	defer os.RemoveAll(upstreamDir)
-
-	t.Log("Running check-version workflow...")
-
-	fixturesDir, _ := filepath.Abs("fixtures")
-	prEvent := filepath.Join(fixturesDir, "pr_merged.json") // Using existing PR event
-
-	runAct(t, forkDir, "check-version", "pull_request", prEvent, "ovsx-fork-tools-check-version.yml", mocksDir, upstreamDir)
-}
-
-func TestE2E_Release(t *testing.T) {
-	if os.Getenv("E2E") != "true" {
-		t.Skip("Skipping E2E test. Set E2E=true to run.")
-	}
-
-	forkDir, mocksDir, upstreamDir := setupE2EEnv(t)
-	defer os.RemoveAll(forkDir)
-	defer os.RemoveAll(mocksDir)
-	defer os.RemoveAll(upstreamDir)
-
-	t.Log("Running release workflow (tag-version job)...")
-
-	fixturesDir, _ := filepath.Abs("fixtures")
-	prEvent := filepath.Join(fixturesDir, "pr_merged.json")
-
-	// Configure origin to point to the local upstream for git push
-	runGit(t, forkDir, "remote", "set-url", "origin", ".e2e/upstream")
-
-	// Inject safe.directory
-	releaseYamlPath := filepath.Join(forkDir, ".github/workflows/ovsx-fork-tools-release.yml")
-	injectGitSafeDirectory(t, releaseYamlPath)
-
-	runAct(t, forkDir, "tag-version", "push", prEvent, "ovsx-fork-tools-release.yml", mocksDir, upstreamDir)
-
-	t.Log("Running release workflow (release job)...")
-
-	// Modify release.yml to use local ovsx mock instead of pnpm dlx
-	content, err := os.ReadFile(releaseYamlPath)
-	if err != nil {
-		t.Fatalf("Failed to read release.yml: %v", err)
-	}
-	newContent := strings.Replace(string(content), "pnpm dlx ovsx", "ovsx", 1)
-	if err := os.WriteFile(releaseYamlPath, []byte(newContent), 0644); err != nil {
-		t.Fatalf("Failed to write release.yml: %v", err)
-	}
-
-	// Re-inject safe directory because we overwrote the file
-	injectGitSafeDirectory(t, releaseYamlPath)
-
-	runAct(t, forkDir, "release", "push", "", "ovsx-fork-tools-release.yml", mocksDir, upstreamDir)
-}
-
-func setupE2EEnv(t *testing.T) (string, string, string) {
-	// 1. Setup Directories
-	toolPath, _ := filepath.Abs("../../ovsx-setup")
-
-	// Create temp dir inside the project workspace so it's visible to sibling containers (act)
-	cwd, _ := os.Getwd()
-	tempBase := filepath.Join(cwd, "temp")
-	if err := os.MkdirAll(tempBase, 0755); err != nil {
-		t.Fatalf("Failed to create temp base dir: %v", err)
-	}
-	tempDir, err := os.MkdirTemp(tempBase, "ovsx-e2e-")
+	// 1. Setup: Clone repos (upstream & fork) to a temp dir
+	tempDir, err := os.MkdirTemp("", "real-e2e-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	// Note: We don't defer remove here because we return the dirs.
-	// The caller is responsible for cleanup.
+	defer os.RemoveAll(tempDir)
 
 	upstreamDir := filepath.Join(tempDir, "upstream")
 	forkDir := filepath.Join(tempDir, "fork")
-	mocksDir := filepath.Join(tempDir, "mocks")
 
-	mocksSource, _ := filepath.Abs("mocks")
+	t.Logf("Setting up E2E in %s", tempDir)
+	setupRealE2E(t, upstreamDir, forkDir)
 
-	// Ensure tool is built
-	if _, err := os.Stat(toolPath); os.IsNotExist(err) {
-		t.Fatalf("ovsx-setup binary not found at %s. Please build it first.", toolPath)
+	// 2. Reset:
+	//    - Reset fork to the initial commit
+	//    - Force push fork
+	resetFork(t, forkDir)
+
+	// 3. Install Workflows:
+	//    - Run ovsx-setup on fork
+	//    - Commit and push workflow files to fork
+	runOvsxSetup(t, forkDir)
+
+	// 4. Trigger Upstream Change:
+	//    - Bump version in upstream package.json
+	//    - Push change to upstream
+	newVersion := triggerUpstreamChange(t, upstreamDir)
+	t.Logf("New upstream version: %s", newVersion)
+
+	// 5. Sync:
+	//    - Trigger sync workflow on fork (workflow_dispatch)
+	t.Log("Triggering sync workflow on fork...")
+	triggerSyncWorkflow(t)
+
+	// 6. Wait & Merge:
+	//    - Wait for PR creation
+	t.Log("Waiting for PR creation...")
+	var prNumber int
+	var prState string
+	waitFor(t, "PR creation", func() (bool, error) {
+		var found bool
+		prNumber, prState, found = findSyncPR(t, forkDir, startTime)
+		return found, nil
+	})
+
+	//    - Manually merge the sync PR (simulating maintainer action)
+	switch prState {
+	case "OPEN":
+		t.Logf("Merging PR #%d...", prNumber)
+		runCommand(t, forkDir, "gh", "pr", "merge", fmt.Sprintf("%d", prNumber), "--merge", "--admin")
+	case "MERGED":
+		t.Logf("PR #%d was already merged (likely by auto-merge).", prNumber)
+		t.Log("Triggering release workflow manually since bot merge doesn't trigger it...")
+		runCommand(t, forkDir, "gh", "workflow", "run", "ovsx-fork-tools-release.yml", "--repo", forkRepo, "--ref", "main")
 	}
 
-	// 2. Initialize Upstream Repo
-	if err := os.MkdirAll(upstreamDir, 0755); err != nil {
-		t.Fatalf("Failed to create upstream dir: %v", err)
+	// 7. Verify Release:
+	//    - Wait for release workflow to run and tag to be created
+	t.Log("Waiting for release tag...")
+	expectedTag := "v" + newVersion
+	waitFor(t, fmt.Sprintf("tag %s", expectedTag), func() (bool, error) {
+		return checkTag(t, forkDir, expectedTag)
+	}, WithTimeout(2*time.Minute))
+
+	t.Logf("Tag %s found!", expectedTag)
+}
+
+// --- Helper Functions ---
+
+type waitConfig struct {
+	interval time.Duration
+	timeout  time.Duration
+}
+
+type WaitOption func(*waitConfig)
+
+func WithInterval(d time.Duration) WaitOption {
+	return func(c *waitConfig) {
+		c.interval = d
 	}
-	runGit(t, upstreamDir, "init", "--initial-branch=main")
-	runGit(t, upstreamDir, "config", "user.name", "Upstream User")
-	runGit(t, upstreamDir, "config", "user.email", "upstream@example.com")
-	runGit(t, upstreamDir, "config", "receive.denyCurrentBranch", "ignore")
+}
 
-	fixturesDir, _ := filepath.Abs("fixtures")
-	copyDir(t, filepath.Join(fixturesDir, "extension"), upstreamDir)
+func WithTimeout(d time.Duration) WaitOption {
+	return func(c *waitConfig) {
+		c.timeout = d
+	}
+}
 
-	runGit(t, upstreamDir, "add", ".")
-	runGit(t, upstreamDir, "commit", "-m", "Initial commit")
+func waitFor(t *testing.T, desc string, check func() (bool, error), opts ...WaitOption) {
+	t.Helper()
+	cfg := waitConfig{
+		interval: 3 * time.Second,
+		timeout:  60 * time.Second,
+	}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
 
-	// 3. Initialize Fork Repo
-	runGit(t, tempDir, "clone", upstreamDir, "fork")
-	runGit(t, forkDir, "config", "user.name", "Fork User")
-	runGit(t, forkDir, "config", "user.email", "fork@example.com")
+	deadline := time.Now().Add(cfg.timeout)
+	for time.Now().Before(deadline) {
+		ok, err := check()
+		if err != nil {
+			// Don't fail immediately on error, just log and retry (unless it's a fatal error?)
+			// For now, treat error as "not ready" but log it.
+			t.Logf("Check %q returned error: %v", desc, err)
+		} else if ok {
+			return
+		}
+		time.Sleep(cfg.interval)
+	}
+	t.Fatalf("Timed out waiting for %q after %v", desc, cfg.timeout)
+}
 
-	copyDir(t, mocksSource, mocksDir)
+func findSyncPR(t *testing.T, forkDir string, minCreatedAt time.Time) (int, string, bool) {
+	// Check for all PRs (open and merged)
+	output := runCommand(t, forkDir, "gh", "pr", "list", "--state", "all", "--limit", "50", "--json", "number,state,headRefName,createdAt")
+	var prs []struct {
+		Number    int       `json:"number"`
+		State     string    `json:"state"`
+		Head      string    `json:"headRefName"`
+		CreatedAt time.Time `json:"createdAt"`
+	}
+	if err := json.Unmarshal([]byte(output), &prs); err != nil {
+		t.Logf("Failed to parse PR list: %v", err)
+		return 0, "", false
+	}
 
-	// 4. Run Setup Tool
-	t.Log("Running ovsx-setup...")
-	cmd := exec.Command(toolPath, "-p", "test-publisher", "-e", ".")
+	for _, pr := range prs {
+		if pr.Head == "upstream-sync" && pr.CreatedAt.After(minCreatedAt) {
+			return pr.Number, pr.State, true
+		}
+	}
+	return 0, "", false
+}
+
+func checkTag(t *testing.T, forkDir, expectedTag string) (bool, error) {
+	// Use --force to avoid "would clobber existing tag" errors if tag moved or exists locally
+	runCommand(t, forkDir, "git", "fetch", "--tags", "--force")
+	tagOutput := runCommand(t, forkDir, "git", "tag", "-l", expectedTag)
+	return strings.TrimSpace(tagOutput) == expectedTag, nil
+}
+
+func setupRealE2E(t *testing.T, upstreamDir, forkDir string) {
+	// Clone directly from GitHub to avoid submodule dependency in CI
+	upstreamURL := "https://github.com/" + upstreamRepo + ".git"
+	forkURL := "https://github.com/" + forkRepo + ".git"
+
+	runCommand(t, ".", "git", "clone", upstreamURL, upstreamDir)
+	runCommand(t, ".", "git", "clone", forkURL, forkDir)
+
+	configureGitUser(t, upstreamDir)
+	configureGitUser(t, forkDir)
+
+	token := os.Getenv("GITHUB_TOKEN")
+	if token == "" {
+		t.Fatal("GITHUB_TOKEN environment variable is required")
+	}
+
+	upstreamRemote := fmt.Sprintf("https://x-access-token:%s@github.com/%s.git", token, upstreamRepo)
+	forkRemote := fmt.Sprintf("https://x-access-token:%s@github.com/%s.git", token, forkRepo)
+
+	runCommand(t, upstreamDir, "git", "remote", "set-url", "origin", upstreamRemote)
+	runCommand(t, forkDir, "git", "remote", "set-url", "origin", forkRemote)
+}
+
+func configureGitUser(t *testing.T, dir string) {
+	runCommand(t, dir, "git", "config", "user.name", "E2E Test")
+	runCommand(t, dir, "git", "config", "user.email", "e2e@test.com")
+}
+
+func resetFork(t *testing.T, forkDir string) {
+	t.Log("Resetting fork...")
+	// Delete any existing rulesets that might block force push
+	deleteRulesets(t, forkRepo)
+
+	token := os.Getenv("GITHUB_TOKEN")
+	if token == "" {
+		t.Fatal("GITHUB_TOKEN environment variable is required")
+	}
+	upstreamRemote := fmt.Sprintf("https://x-access-token:%s@github.com/%s.git", token, upstreamRepo)
+
+	// Add upstream remote to fork
+	runCommand(t, forkDir, "git", "remote", "add", "upstream-source", upstreamRemote)
+
+	// Fetch from upstream-source
+	runCommand(t, forkDir, "git", "fetch", "upstream-source")
+
+	// Reset to upstream-source/main
+	runCommand(t, forkDir, "git", "reset", "--hard", "upstream-source/main")
+
+	// Force push to fork origin
+	runCommand(t, forkDir, "git", "push", "--force", "origin", "main")
+
+	// Delete tags on fork to ensure clean state
+	deleteRemoteTags(t, forkDir)
+}
+
+func deleteRulesets(t *testing.T, repo string) {
+	output := runCommand(t, ".", "gh", "api", fmt.Sprintf("repos/%s/rulesets", repo))
+	var rulesets []struct {
+		ID int `json:"id"`
+	}
+	json.Unmarshal([]byte(output), &rulesets)
+
+	for _, rs := range rulesets {
+		runCommand(t, ".", "gh", "api", fmt.Sprintf("repos/%s/rulesets/%d", repo, rs.ID), "-X", "DELETE")
+	}
+}
+
+func deleteRemoteTags(t *testing.T, dir string) {
+	output := runCommand(t, dir, "git", "ls-remote", "--tags", "origin")
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		parts := strings.Fields(line)
+		if len(parts) == 2 {
+			ref := parts[1]
+			if strings.HasPrefix(ref, "refs/tags/") && !strings.HasSuffix(ref, "^{}") {
+				tag := strings.TrimPrefix(ref, "refs/tags/")
+				runCommand(t, dir, "git", "push", "--delete", "origin", tag)
+			}
+		}
+	}
+}
+
+func runOvsxSetup(t *testing.T, forkDir string) {
+	cwd, _ := os.Getwd()
+	projectRoot := filepath.Dir(filepath.Dir(cwd))
+	if _, err := os.Stat(filepath.Join(projectRoot, "main.go")); os.IsNotExist(err) {
+		projectRoot = cwd
+	}
+
+	setupBin := filepath.Join(projectRoot, "ovsx-setup-e2e")
+	runCommand(t, projectRoot, "go", "build", "-o", setupBin, ".")
+	defer os.Remove(setupBin)
+
+	cmd := exec.Command(setupBin, "--extension-path", ".", "--publisher", "TimsExperiments")
 	cmd.Dir = forkDir
-	// Add mocks to PATH for the tool execution (not act)
-	cmd.Env = append(os.Environ(), fmt.Sprintf("PATH=%s:%s", mocksDir, os.Getenv("PATH")))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("ovsx-setup failed: %v\nOutput:\n%s", err, out)
-	}
-
-	assertFileExists(t, filepath.Join(forkDir, ".github/workflows/ovsx-fork-tools-sync.yml"))
-	assertFileExists(t, filepath.Join(forkDir, ".github/workflows/ovsx-fork-tools-release.yml"))
-
-	// Commit setup changes
-	runGit(t, forkDir, "add", ".")
-	runGit(t, forkDir, "commit", "-m", "chore: configure openvsx release workflows")
-
-	return forkDir, mocksDir, upstreamDir
-}
-
-func runGit(t *testing.T, dir string, args ...string) {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v failed in %s: %v\nOutput:\n%s", args, dir, err, out)
-	}
-}
-
-func runAct(t *testing.T, dir, job, event, eventPath, workflowFile, mocksDir, upstreamDir string) {
-	// act <event> -j <job> -W .github/workflows/<file>
-
-	e2eDir := filepath.Join(dir, ".e2e")
-	os.RemoveAll(e2eDir) // Clean up previous run
-	if err := os.MkdirAll(e2eDir, 0755); err != nil {
-		t.Fatalf("Failed to create .e2e dir: %v", err)
-	}
-
-	// Copy mocks
-	copyDir(t, mocksDir, filepath.Join(e2eDir, "mocks"))
-
-	copyDir(t, upstreamDir, filepath.Join(e2eDir, "upstream"))
-
-	args := []string{
-		"-v",
-		event,
-		// Use the act-latest image for ubuntu-latest
-		"-P", "ubuntu-latest=catthehacker/ubuntu:act-latest",
-		// Bind the current working directory to the container
-		"--bind",
-		"-j", job,
-		"-W", filepath.Join(".github/workflows", workflowFile),
-		"--container-architecture", "linux/amd64",
-		"-b",
-		"--env", "GITHUB_TOKEN=mock-token",
-		"--var", "PUBLISHER_NAME=test-publisher",
-		"--var", "EXTENSION_PATH=.",
-		// Inject mocks into PATH.
-		// When using -b, act mounts the host directory to the same path in the container.
-		// So we must use the absolute path to the mocks.
-		"--env", fmt.Sprintf("PATH=%s:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", filepath.Join(e2eDir, "mocks")),
-		// Set MOCK_UPSTREAM_URL to the container path (which is also the host path with -b)
-		"--env", fmt.Sprintf("MOCK_UPSTREAM_URL=%s", filepath.Join(e2eDir, "upstream")),
-	}
-
-	if eventPath != "" {
-		args = append(args, "-e", eventPath)
-	}
-
-	cmd := exec.Command("act", args...)
-	cmd.Dir = dir
-
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Logf("act output:\n%s", output)
-		t.Fatalf("act %s failed: %v", job, err)
+		t.Fatalf("ovsx-setup failed: %v\nOutput: %s", err, output)
 	}
-	t.Logf("act %s success:\n%s", job, output)
-}
 
-func copyDir(t *testing.T, src, dst string) {
-	t.Logf("Copying from %s to %s", src, dst)
-	cmd := exec.Command("cp", "-r", src+"/.", dst)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("Failed to copy fixtures from %s to %s: %v\nOutput: %s", src, dst, err, out)
+	runCommand(t, forkDir, "git", "add", ".")
+	status := runCommand(t, forkDir, "git", "status", "--porcelain")
+	if status != "" {
+		runCommand(t, forkDir, "git", "commit", "-m", "chore: configure openvsx release workflows")
+		runCommand(t, forkDir, "git", "push", "origin", "main")
 	}
 }
 
-func injectGitSafeDirectory(t *testing.T, path string) {
-	content, err := os.ReadFile(path)
+func triggerUpstreamChange(t *testing.T, upstreamDir string) string {
+	runCommand(t, upstreamDir, "git", "fetch", "origin")
+	runCommand(t, upstreamDir, "git", "reset", "--hard", "origin/main")
+
+	packageJsonPath := filepath.Join(upstreamDir, "package.json")
+	content, _ := os.ReadFile(packageJsonPath)
+
+	var data map[string]interface{}
+	json.Unmarshal(content, &data)
+
+	version := data["version"].(string)
+	verParts := strings.Split(version, ".")
+
+	var patch int
+	fmt.Sscanf(verParts[2], "%d", &patch)
+	newVersion := fmt.Sprintf("%s.%s.%d", verParts[0], verParts[1], patch+1)
+	data["version"] = newVersion
+
+	newContent, _ := json.MarshalIndent(data, "", "  ")
+	newContent = append(newContent, '\n')
+	os.WriteFile(packageJsonPath, newContent, 0644)
+
+	runCommand(t, upstreamDir, "git", "add", "package.json")
+	runCommand(t, upstreamDir, "git", "commit", "-m", fmt.Sprintf("chore: bump version to %s", newVersion))
+	runCommand(t, upstreamDir, "git", "push", "origin", "main")
+
+	return newVersion
+}
+
+func triggerSyncWorkflow(t *testing.T) {
+	runCommand(t, ".", "gh", "workflow", "run", "ovsx-fork-tools-sync.yml", "--repo", forkRepo, "--ref", "main")
+}
+
+func runCommand(t *testing.T, dir string, name string, args ...string) string {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("Failed to read %s: %v", path, err)
+		if (name == "gh" && args[0] == "api" && args[2] == "DELETE") ||
+			(name == "git" && args[0] == "push" && args[1] == "--delete") {
+			return string(output)
+		}
+		t.Fatalf("Command %s %v failed in %s: %v\nOutput: %s", name, args, dir, err, output)
 	}
-
-	// Inject safe.directory config at the start of the job or before git operations
-	// We'll try to prepend it to the first 'run' command we find, or just add a setup step.
-	// Adding a setup step is safer.
-
-	setupStep := `
-      - name: Configure Git Safe Directory
-        run: git config --global --add safe.directory '*'
-`
-
-	newContent := strings.Replace(string(content), "    steps:", "    steps:"+setupStep, 1)
-
-	if err := os.WriteFile(path, []byte(newContent), 0644); err != nil {
-		t.Fatalf("Failed to write %s: %v", path, err)
-	}
-}
-
-func assertFileExists(t *testing.T, path string) {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		t.Errorf("File %s does not exist", path)
-	}
+	return string(output)
 }

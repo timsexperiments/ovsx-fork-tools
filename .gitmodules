@@ -1,0 +1,6 @@
+[submodule "tests/e2e/test-extension"]
+	path = tests/e2e/test-extension
+	url = https://github.com/ovsx-fork-tools/test-extension
+[submodule "tests/e2e/test-extension-fork"]
+	path = tests/e2e/test-extension-fork
+	url = https://github.com/timsexperiments/ovsx-fork-tools-test-extension
