@@ -4,68 +4,78 @@ This repository contains standard workflows to automate syncing a VS Code extens
 
 ## 🚀 Quick Start (Automated)
 
-If you have the [GitHub CLI (`gh`)](https://cli.github.com/) installed, you can setup your fork in seconds.
-
-1. Navigate to your forked repository directory in your terminal.
-2. Run the tool using `go run`:
+If you have the [Go](https://go.dev/dl/) installed, you can setup your fork in seconds.
 
 ```bash
 go run github.com/timsexperiments/ovsx-fork-tools@latest
 ```
 
-### Installation
+### Usage
 
-You can also install the tool globally:
-
-**Using Go:**
+Run the tool from the root of your forked extension repository:
 
 ```bash
-go install github.com/timsexperiments/ovsx-fork-tools@latest
+go run github.com/timsexperiments/ovsx-fork-tools@latest [flags]
 ```
 
-**Using Pre-built Binaries:**
+#### Flags
 
-Download the latest binary for your platform from the [Releases](https://github.com/timsexperiments/ovsx-fork-tools/releases) page.
+| Flag                     | Description                                         |
+| :----------------------- | :-------------------------------------------------- |
+| `-p`, `--publisher`      | Your OpenVSX Publisher ID (e.g. `timsexperiments`)  |
+| `-e`, `--extension-path` | Path to the extension within the repo (default `.`) |
 
-Then run it:
+**Example:**
 
 ```bash
-ovsx-setup
+go run github.com/timsexperiments/ovsx-fork-tools@latest -p my-publisher -e ./packages/extension
 ```
 
 ## 🛠 Manual Configuration Guide
 
-If you prefer to set this up manually, follow the steps below.
+If you prefer to set this up manually, you can perform the same steps the tool does using the GitHub CLI (`gh`).
 
-### 1. Configure Secrets
+### 1. Install Workflows
 
-Go to **Settings** > **Secrets and variables** > **Actions** > **New repository secret**.
+Copy the workflow files from this repository to your fork's `.github/workflows/` directory. We recommend using the following names so they are easily identifiable.
 
-| Name             | Description                                                                                                     |
-| :--------------- | :-------------------------------------------------------------------------------------------------------------- |
-| `OPEN_VSX_TOKEN` | Your Personal Access Token from [open-vsx.org/user-settings/tokens](https://open-vsx.org/user-settings/tokens). |
+1. Copy `internal/setup/workflows/sync.yml` &rarr; `.github/workflows/ovsx-fork-tools-sync.yml`
+2. Copy `internal/setup/workflows/release.yml` &rarr; `.github/workflows/ovsx-fork-tools-release.yml`
+3. Copy `internal/setup/workflows/check-version.yml` &rarr; `.github/workflows/ovsx-fork-tools-check-version.yml`
 
-### 2. Configure Variables
+### 2. Configure Secrets
 
-Go to **Settings** > **Secrets and variables** > **Actions** > **Variables** > **New repository variable**.
+Set the `OPEN_VSX_TOKEN` secret. You can get your token from [open-vsx.org/user-settings/tokens](https://open-vsx.org/user-settings/tokens).
 
-| Name             | Value Example                 | Description                                                          |
-| :--------------- | :---------------------------- | :------------------------------------------------------------------- |
-| `PUBLISHER_NAME` | `timsexperiments`             | The publisher ID you created on OpenVSX.                             |
-| `EXTENSION_PATH` | `packages/vscode-tailwindcss` | The path to the extension package within the repo. Use `.` for root. |
+```bash
+gh secret set OPEN_VSX_TOKEN --body "your_token_here"
+```
 
-### 3. Install Workflows
+### 3. Configure Variables
 
-Copy the files from this repository into your fork:
+Set the configuration variables required by the workflows.
 
-1. Copy `workflows/sync.yml` to `.github/workflows/sync.yml`
-2. Copy `workflows/release.yml` to `.github/workflows/release.yml`
+**Publisher Name:**
+The ID of the publisher you created on OpenVSX (e.g., `timsexperiments`).
+
+```bash
+gh variable set PUBLISHER_NAME --body "your-publisher-id"
+```
+
+**Extension Path:**
+The path to the extension package within the repository (usually `.` for the root).
+
+```bash
+gh variable set EXTENSION_PATH --body "."
+```
 
 ### 4. Enable Auto-Merge
 
-1. Go to **Settings** > **General**.
-2. Scroll to **Pull Requests**.
-3. Check the box **"Allow auto-merge"**.
+The sync workflow relies on auto-merge to seamlessly update your fork.
+
+```bash
+gh repo edit --enable-auto-merge
+```
 
 ## Workflow Details
 
